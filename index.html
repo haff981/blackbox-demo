@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黑盒解谜 · BlackBox</title>
+<style>
+:root{
+  --bg:#070b12; --panel:#0d1420; --line:#1c2940;
+  --neon:#39ff8e; --vio:#a78bfa; --gold:#ffd166; --red:#ff5d5d;
+  --txt:#dbe7f5; --dim:#8ba0bd;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(1200px 600px at 50% -10%,#101c33 0%,var(--bg) 60%);
+  color:var(--txt);font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;line-height:1.7}
+.wrap{max-width:960px;margin:0 auto;padding:20px 16px 80px}
+header.hero{text-align:center;padding:44px 12px 28px;border:1px solid var(--line);border-radius:18px;
+  background:linear-gradient(180deg,#0d1626,#080d16);margin-bottom:22px;position:relative;overflow:hidden}
+header.hero::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,transparent 0 34px,rgba(57,255,142,.045) 34px 35px);pointer-events:none}
+.kicker{color:var(--neon);letter-spacing:.35em;font-size:12px}
+h1{font-size:34px;margin:10px 0 6px}
+h1 .box{color:var(--vio)}
+.sub{color:var(--dim);font-size:14px}
+.stats{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.stat{border:1px solid var(--line);border-radius:12px;padding:10px 18px;min-width:150px;background:#0a111d}
+.stat b{display:block;font-size:22px;color:var(--gold)}
+.stat span{font-size:12px;color:var(--dim)}
+#countdown{color:var(--neon)!important}
+section.card{border:1px solid var(--line);border-radius:16px;background:var(--panel);
+  padding:22px 20px;margin-bottom:18px}
+section.card h2{font-size:19px;margin-bottom:4px;color:var(--neon)}
+section.card h2.v{color:var(--vio)} section.card h2.g{color:var(--gold)}
+.desc{color:var(--dim);font-size:13.5px;margin-bottom:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,textarea,select{background:#080e18;border:1px solid var(--line);color:var(--txt);
+  border-radius:10px;padding:10px 12px;font-size:15px;width:100%}
+input:focus,textarea:focus{outline:none;border-color:var(--neon)}
+button{cursor:pointer;border:none;border-radius:10px;padding:11px 20px;font-size:15px;font-weight:700;
+  background:linear-gradient(135deg,var(--neon),#1fd67c);color:#04120a;transition:.15s}
+button:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(57,255,142,.25)}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+button.warn{background:linear-gradient(135deg,var(--gold),#f0a840);color:#1a1004}
+button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.out{font-size:44px;font-weight:800;margin:14px 0;text-align:center;min-height:70px}
+.out b.zero{color:var(--red)} .out b.one{color:var(--neon);text-shadow:0 0 24px rgba(57,255,142,.6)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
+th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left}
+th{color:var(--dim);font-weight:600}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;word-break:break-all}
+.addr{color:var(--vio)}
+.tag{display:inline-block;font-size:11px;padding:2px 10px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.tag.ok{color:var(--neon);border-color:var(--neon)}
+.tag.bad{color:var(--red);border-color:var(--red)}
+.note{background:#0a1220;border-left:3px solid var(--gold);padding:10px 14px;border-radius:0 10px 10px 0;
+  font-size:13.5px;color:var(--dim);margin:12px 0}
+.note b{color:var(--gold)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:640px){.grid2{grid-template-columns:1fr}h1{font-size:26px}}
+footer{text-align:center;color:var(--dim);font-size:12px;margin-top:30px}
+a{color:var(--neon)}
+ol.rules{margin:8px 0 0 20px;color:var(--dim);font-size:14px}
+ol.rules li{margin-bottom:8px} ol.rules b{color:var(--txt)}
+
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">BLACK BOX // CHAIN PUZZLE</div>
+    <h1>黑盒<span class="box">解谜</span></h1>
+    <div class="sub" id="roundTitle">黑盒 #001 · 链上有一颗芯片，没人知道它在算什么 —— 除了出题人</div>
+    <div class="stats">
+      <div class="stat"><b id="poolBalance">--</b><span>奖池 (BNB)</span></div>
+      <div class="stat"><b id="submitCount">--</b><span>已提交答案</span></div>
+      <div class="stat"><b id="countdown">--</b><span>本轮截止</span></div>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>◈ 试探台 <span class="tag" id="modeTag">DEMO</span></h2>
+    <div class="desc" id="inputHint">输入 0 ~ 15 的整数，黑盒返回 0 或 1。试探免费、次数不限 —— 把它的规律摸出来。</div>
+    <div class="row">
+      <div style="flex:1;min-width:160px"><input id="probeInput" type="number" min="0" max="15" placeholder="输入 0 ~ 15"></div>
+      <button onclick="probe()">⚡ 试探</button>
+      <button class="ghost" onclick="probeRandom()">🎲 随机试几次</button>
+    </div>
+    <div class="out" id="probeOut">?</div>
+    <table><thead><tr><th>输入</th><th>二进制</th><th>输出</th><th>时间</th></tr></thead>
+    <tbody id="probeHistory"><tr><td colspan="4" style="color:var(--dim)">还没有试探记录</td></tr></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2 class="v">◈ 提交答案 <span class="tag" id="ticketTag">门票 -- BNB</span></h2>
+    <div class="desc">想通了？提交你的答案。<b style="color:var(--txt)">答案先哈希上链（防抄袭），截止后公布答案+盐来认领。</b>每钱包限 <span id="maxSub">3</span> 次。</div>
+    <div class="note">💡 <b>防抄袭机制：</b>链上只记录你答案的哈希，别人看不到明文。截止后你在下方"揭晓区"输入答案+盐，网站验证哈希一致才公示。没人能抄你的。</div>
+    <div class="grid2">
+      <input id="ansText" placeholder="你的答案（一句话描述规律，如：输出1当且仅当输入是质数）">
+      <input id="ansSalt" placeholder="盐（随便填几个字符，自己记好）">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="connectBtn" class="ghost" onclick="connectWallet()">连接钱包</button>
+      <button class="warn" onclick="submitAnswer()">🎟️ 支付门票并提交 (上链)</button>
+    </div>
+    <div class="desc mono" id="walletInfo" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card">
+    <h2 class="g">◈ 探子榜</h2>
+    <div class="desc">所有已上链的提交（答案哈希，截止前保密）。<button class="ghost" style="padding:4px 12px;font-size:12px" onclick="loadBoard()">↻ 刷新</button></div>
+    <table><thead><tr><th>#</th><th>地址</th><th>答案哈希</th><th>时间</th><th>状态</th></tr></thead>
+    <tbody id="board"><tr><td colspan="5" style="color:var(--dim)">读取中…</td></tr></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>◈ 揭晓区</h2>
+    <div class="desc">截止后，在此输入你的答案+盐进行揭晓。网站会校验与链上哈希是否一致，一致才公示 —— 全程公开可验证。</div>
+    <div class="grid2">
+      <input id="revAns" placeholder="你的答案（与提交时一字不差）">
+      <input id="revSalt" placeholder="你的盐">
+    </div>
+    <div class="row" style="margin-top:10px"><button onclick="reveal()">📢 揭晓我的答案</button></div>
+    <table><thead><tr><th>地址</th><th>揭晓的答案</th><th>校验</th></tr></thead>
+    <tbody id="reveals"><tr><td colspan="3" style="color:var(--dim)">暂无揭晓</td></tr></tbody></table>
+    <div class="note">🛠️ <b>出题人验证：</b>在下方输入正确答案，网站自动标出答对的地址，你按公示结果从奖池发奖即可。
+      <div class="row" style="margin-top:8px"><div style="flex:1"><input id="adminAns" placeholder="正确答案（出题人填写）"></div>
+      <button class="ghost" onclick="adminCheck()">判定 Winner</button></div>
+      <div id="adminOut" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="v">◈ 规则</h2>
+    <ol class="rules">
+      <li><b>试探免费、无限次。</b>黑盒是一个链上电路（TapeOut Circuit），输入输出都是确定的。</li>
+      <li><b>提交答案需支付门票 <span id="ruleTicket">--</span> BNB</b>，每钱包限 <span id="ruleMax">3</span> 次。门票进入奖池。</li>
+      <li><b>奖池分配：</b>70% 冠军 · 20% 平台 · 10% 滚入下期奖池。</li>
+      <li><b>防抄袭：</b>提交时链上只存答案哈希；截止后 48 小时为揭晓期，凭答案+盐认领。逾期未揭晓视为弃权，奖池滚入下期。</li>
+      <li><b>判定：</b>答案由出题人按"规律描述是否等价"人工判定，判定过程公开。</li>
+      <li>试探/提交均在 BSC 主网进行，Gas 另计（约几分钱）。</li>
+    </ol>
+  </section>
+
+  <footer>BLACKBOX · 链上黑盒解谜 · 答案的唯一性由哈希保证</footer>
+</div>
+
+<script>
+// ============ 黑盒解谜 · 全站配置 ============
+// 开新一期比赛，只改这个文件
+const CONFIG = {
+  roundNo: 1,
+  roundTitle: "黑盒 #001",
+  // 本轮截止时间（时间戳毫秒）。部署前改成固定值，例如：new Date("2026-10-08T20:00:00+08:00").getTime()
+  roundEnd: Date.now() + 7 * 24 * 3600 * 1000,
+
+  // 奖池钱包地址：玩家门票 BNB 打到这里；你用这个钱包的私钥/助记词给冠军发奖
+  // ⚠️ 部署前必须换成你自己的地址！建议用单独的新钱包，只放奖池的钱
+  poolAddress: "0x0000000000000000000000000000000000000000",
+
+  // 门票价格（BNB）与每钱包限购
+  ticketBNB: "0.02",
+  maxSubmitsPerWallet: 3,
+
+  // BSC 主网
+  bscChainId: 56,
+  bscRpc: "https://bsc-dataseed.binance.org/",
+  bscscanApi: "https://api.bscscan.com/api",
+  // 去 https://bscscan.com 申请免费 API Key，填进来后"探子榜"才能读链上提交记录
+  bscscanApiKey: "YourApiKeyToken",
+
+  // 黑盒电路：demo 模式用本地模拟（上线试玩）；你流片出真实电路后改成 onchain 并填地址
+  // onchain 模式下，probe 会调用合约的 view 函数。TapeOut 电路是链上可调用函数，
+  // 把它的 ABI 和查询方法名填进来即可，例如：{ mode:"onchain", address:"0x...", method:"eval" }
+  circuit: { mode: "demo", address: "", method: "eval", abi: [] },
+
+  inputHint: "输入 0 ~ 15 的整数，黑盒返回 0 或 1",
+};
+
+</script>
+<script>
+// ============ DEMO 黑盒（试玩用） ============
+// 正式比赛时这个文件作废：真正的黑盒是你在 TapeOut 上流片出来的 Circuit NFT，
+// 把 config.js 里 circuit.mode 改成 "onchain" 并填合约地址即可。
+// DEMO 答案：输出 1 当且仅当输入是质数（2, 3, 5, 7, 11, 13）
+const DemoBox = {
+  name: "质数幽灵",
+  eval(x) {
+    if (!Number.isInteger(x) || x < 0 || x > 15) throw new Error("请输入 0 ~ 15 的整数");
+    return [2, 3, 5, 7, 11, 13].includes(x) ? 1 : 0;
+  },
+  // 仅 demo 展示用。正式比赛答案只在你（出题人）手里，不在任何文件里。
+  answer: "输出 1 当且仅当输入是质数（2, 3, 5, 7, 11, 13）",
+};
+
+</script>
+<script>
+// ============ 黑盒解谜 · 主逻辑 ============
+const $ = (id) => document.getElementById(id);
+const provider = new ethers.providers.JsonRpcProvider(CONFIG.bscRpc);
+let signer = null, userAddr = "";
+
+// ---------- 初始化 ----------
+window.addEventListener("load", () => {
+  $("roundTitle").textContent = `黑盒 #${String(CONFIG.roundNo).padStart(3, "0")} · 链上有一颗芯片，没人知道它在算什么 —— 除了出题人`;
+  $("ticketTag").textContent = `门票 ${CONFIG.ticketBNB} BNB`;
+  $("ruleTicket").textContent = CONFIG.ticketBNB;
+  $("ruleMax").textContent = CONFIG.maxSubmitsPerWallet;
+  $("maxSub").textContent = CONFIG.maxSubmitsPerWallet;
+  $("inputHint").textContent = CONFIG.inputHint + "。试探免费、次数不限 —— 把它的规律摸出来。";
+  $("modeTag").textContent = CONFIG.circuit.mode === "demo" ? "DEMO 试玩" : "链上实盘";
+  if (CONFIG.circuit.mode !== "demo") $("modeTag").classList.add("ok");
+  tickCountdown(); setInterval(tickCountdown, 1000);
+  loadPoolBalance(); loadBoard(); loadReveals();
+});
+
+function tickCountdown() {
+  const ms = CONFIG.roundEnd - Date.now();
+  if (ms <= 0) { $("countdown").textContent = "已截止 · 待揭晓"; return; }
+  const d = Math.floor(ms / 86400000), h = Math.floor(ms / 3600000) % 24,
+        m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60;
+  $("countdown").textContent = `${d}天 ${h}时 ${m}分 ${s}秒`;
+}
+
+async function loadPoolBalance() {
+  try {
+    const bal = await provider.getBalance(CONFIG.poolAddress);
+    $("poolBalance").textContent = parseFloat(ethers.utils.formatEther(bal)).toFixed(4);
+  } catch (e) { $("poolBalance").textContent = "读取失败"; }
+}
+
+// ---------- 试探 ----------
+async function evalBox(x) {
+  if (CONFIG.circuit.mode === "demo") return DemoBox.eval(x);
+  // 链上模式：调用真实电路合约的 view 函数
+  const c = new ethers.Contract(CONFIG.circuit.address, CONFIG.circuit.abi, provider);
+  const r = await c[CONFIG.circuit.method](x);
+  return Number(r);
+}
+
+async function probe() {
+  const x = parseInt($("probeInput").value, 10);
+  try {
+    const y = await evalBox(x);
+    $("probeOut").innerHTML = `<b class="${y ? "one" : "zero"}">${y}</b>`;
+    addProbeRow(x, y);
+  } catch (e) { $("probeOut").innerHTML = `<span style="font-size:16px;color:var(--red)">${e.message}</span>`; }
+}
+
+async function probeRandom() {
+  for (let i = 0; i < 8; i++) {
+    const x = Math.floor(Math.random() * 16);
+    try { addProbeRow(x, await evalBox(x)); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 120));
+  }
+}
+
+const seen = new Set();
+function addProbeRow(x, y) {
+  const tb = $("probeHistory");
+  if (seen.size === 0) tb.innerHTML = "";
+  if (seen.has(x)) return;
+  seen.add(x);
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td class="mono">${x}</td><td class="mono">${x.toString(2).padStart(4, "0")}</td>
+    <td><b class="${y ? "one" : "zero"}" style="color:${y ? "var(--neon)" : "var(--red)"}">${y}</b></td>
+    <td style="color:var(--dim)">${new Date().toLocaleTimeString()}</td>`;
+  tb.prepend(tr);
+}
+
+// ---------- 钱包 ----------
+async function connectWallet() {
+  if (!window.ethereum) return alert("请先安装 MetaMask / OKX Wallet 等浏览器钱包");
+  try {
+    await window.ethereum.request({ method: "eth_requestAccounts" });
+    const p = new ethers.providers.Web3Provider(window.ethereum);
+    const net = await p.getNetwork();
+    if (net.chainId !== CONFIG.bscChainId) {
+      await window.ethereum.request({ method: "wallet_switchEthereumChain",
+        params: [{ chainId: "0x" + CONFIG.bscChainId.toString(16) }] });
+    }
+    signer = p.getSigner(); userAddr = await signer.getAddress();
+    $("walletInfo").innerHTML = `已连接：<span class="addr">${shortAddr(userAddr)}</span>`;
+    $("connectBtn").textContent = "已连接 ✓";
+  } catch (e) { alert("连接失败：" + (e.message || e)); }
+}
+const shortAddr = (a) => a.slice(0, 6) + "…" + a.slice(-4);
+
+// 答案承诺 = keccak256("答案|盐")
+const commitHash = (ans, salt) =>
+  ethers.utils.keccak256(ethers.utils.toUtf8Bytes(ans.trim() + "|" + salt.trim()));
+
+// ---------- 提交答案（上链） ----------
+async function submitAnswer() {
+  if (CONFIG.circuit.mode === "demo") {
+    alert("DEMO 试玩模式：\n\n提交按钮在正式开赛（换上真实奖池地址、关闭 demo）后才会发起链上交易。\n试探台可以随便玩，答案是：输出1当且仅当输入是质数。");
+    return;
+  }
+  const ans = $("ansText").value, salt = $("ansSalt").value;
+  if (!ans.trim() || !salt.trim()) return alert("请填写答案和盐");
+  if (!signer) { await connectWallet(); if (!signer) return; }
+  // 每钱包限次（读链上已提交数）
+  const mine = (await fetchCommits()).filter((c) => c.from.toLowerCase() === userAddr.toLowerCase());
+  if (mine.length >= CONFIG.maxSubmitsPerWallet)
+    return alert(`该钱包已提交 ${mine.length} 次，达到上限`);
+  const hash = commitHash(ans, salt);
+  if (!confirm(`提交答案哈希上链\n\n门票：${CONFIG.ticketBNB} BNB\n哈希：${hash}\n\n⚠️ 盐请自己记好，揭晓时需要！`)) return;
+  try {
+    const tx = await signer.sendTransaction({
+      to: CONFIG.poolAddress,
+      value: ethers.utils.parseEther(CONFIG.ticketBNB),
+      data: hash,
+    });
+    alert("已提交！交易哈希：\n" + tx.hash + "\n\n请记好你的盐，截止后来揭晓。");
+    $("ansText").value = ""; $("ansSalt").value = "";
+    setTimeout(() => { loadBoard(); loadPoolBalance(); }, 8000);
+  } catch (e) { alert("提交失败：" + (e.message || e)); }
+}
+
+// ---------- 探子榜（读 BscScan） ----------
+async function fetchCommits() {
+  if (!CONFIG.bscscanApiKey || CONFIG.bscscanApiKey === "YourApiKeyToken") return [];
+  const url = `${CONFIG.bscscanApi}/api?module=account&action=txlist&address=${CONFIG.poolAddress}` +
+    `&startblock=0&endblock=99999999&sort=asc&apikey=${CONFIG.bscscanApiKey}`;
+  try {
+    const j = await (await fetch(url)).json();
+    if (j.status !== "1" || !Array.isArray(j.result)) return [];
+    return j.result
+      .filter((t) => t.input && t.input.length === 66 && t.value !== "0")
+      .map((t) => ({ from: t.from, hash: t.hash, commit: t.input.toLowerCase(),
+                     time: new Date(t.timeStamp * 1000).toLocaleString() }));
+  } catch (e) { return []; }
+}
+
+async function loadBoard() {
+  const tb = $("board");
+  if (!CONFIG.bscscanApiKey || CONFIG.bscscanApiKey === "YourApiKeyToken") {
+    tb.innerHTML = `<tr><td colspan="5" style="color:var(--dim)">config.js 里填入 BscScan API Key 后显示链上提交</td></tr>`;
+    $("submitCount").textContent = "--"; return;
+  }
+  const list = await fetchCommits();
+  $("submitCount").textContent = list.length;
+  if (!list.length) { tb.innerHTML = `<tr><td colspan="5" style="color:var(--dim)">暂无提交，来当第一个探子</td></tr>`; return; }
+  tb.innerHTML = "";
+  list.forEach((c, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i + 1}</td><td class="mono addr">${shortAddr(c.from)}</td>
+      <td class="mono">${c.commit.slice(0, 18)}…</td><td style="color:var(--dim)">${c.time}</td>
+      <td><span class="tag">待揭晓</span></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+// ---------- 揭晓（本地验证链上哈希） ----------
+function getReveals() { try { return JSON.parse(localStorage.getItem("bb_reveals") || "[]"); } catch (e) { return []; } }
+function saveReveals(r) { localStorage.setItem("bb_reveals", JSON.stringify(r)); }
+
+async function reveal() {
+  const ans = $("revAns").value, salt = $("revSalt").value;
+  if (!ans.trim() || !salt.trim()) return alert("请填写答案和盐");
+  if (!userAddr) { await connectWallet(); if (!userAddr) return; }
+  const h = commitHash(ans, salt).toLowerCase();
+  const mine = (await fetchCommits()).filter((c) =>
+    c.from.toLowerCase() === userAddr.toLowerCase() && c.commit === h);
+  const tb = $("reveals");
+  if (getReveals().length === 0) tb.innerHTML = "";
+  if (!mine.length && CONFIG.bscscanApiKey !== "YourApiKeyToken")
+    return alert("链上没找到你这个答案的提交记录：答案或盐与提交时不一致");
+  const rs = getReveals();
+  if (!rs.find((r) => r.addr.toLowerCase() === userAddr.toLowerCase())) {
+    rs.push({ addr: userAddr, ans: ans.trim(), ok: true, time: new Date().toLocaleString() });
+    saveReveals(rs);
+  }
+  loadReveals();
+  $("revAns").value = ""; $("revSalt").value = "";
+  alert("揭晓成功！你的答案已公示，哈希校验通过 ✓");
+}
+
+function loadReveals() {
+  const rs = getReveals(), tb = $("reveals");
+  if (!rs.length) { tb.innerHTML = `<tr><td colspan="3" style="color:var(--dim)">暂无揭晓</td></tr>`; return; }
+  tb.innerHTML = "";
+  rs.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="mono addr">${shortAddr(r.addr)}</td><td>${escapeHtml(r.ans)}</td>
+      <td><span class="tag ok">哈希一致</span></td>`;
+    tr.dataset.addr = r.addr.toLowerCase(); tr.dataset.ans = r.ans;
+    tb.appendChild(tr);
+  });
+}
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---------- 出题人判定 Winner ----------
+function adminCheck() {
+  const right = $("adminAns").value.trim();
+  if (!right) return alert("请先输入正确答案");
+  const rs = getReveals();
+  const winners = rs.filter((r) => r.ans === right);
+  const rows = $("reveals").querySelectorAll("tr");
+  rows.forEach((tr) => {
+    const hit = tr.dataset.ans === right;
+    const cell = tr.cells[2];
+    if (cell) cell.innerHTML = hit ? `<span class="tag ok">✓ 答对</span>` : `<span class="tag bad">✗ 未中</span>`;
+  });
+  $("adminOut").innerHTML = winners.length
+    ? `🎉 Winner：${winners.map((w) => `<span class="mono addr">${w.addr}</span>`).join("、")}（共 ${winners.length} 人答对，按规则平分 70% 奖池）`
+    : `暂无答对者。奖池按规则滚入下期。`;
+  if (winners.length) alert("判定完成！Winner 地址已标出，从奖池钱包转账 70% 即可。");
+}
+
+</script>
+</body>
+</html>
