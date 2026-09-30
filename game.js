@@ -27,7 +27,6 @@ const BOX_DEFS = [
     ruleDesc: '只有平方数输出 1（0、1、4、9）',
     rule: new Set([0, 1, 4, 9]), pos: [0.6, -3.3] },
 ];
-const CAT_COLORS = [0xdd8a3e, 0x23232e, 0xe9e4d8, 0x8f8f9c];
 const ROOM = { x: 5.4, z: 3.9 }; // 猫的活动边界
 
 const $ = id => document.getElementById(id);
@@ -416,50 +415,136 @@ function fireBeam(from, to, done) {
   });
 }
 
-// ============ 猫 ============
+// ============ 猫（Q版大头猫） ============
+const CAT_STYLES = [
+  { fur: 0xe8954a, dark: 0xb96a24, belly: 0xf9e2bd, stripe: true  }, // 橘猫
+  { fur: 0x2b2b36, dark: 0x17171f, belly: 0x3d3d4d, stripe: false }, // 黑猫
+  { fur: 0xf2eee4, dark: 0xd9d3c3, belly: 0xffffff, stripe: false }, // 白猫
+  { fur: 0x9aa0ad, dark: 0x6f7582, belly: 0xccd1db, stripe: true  }, // 灰猫
+];
 const cat = { group: new THREE.Group(), heading: 0, targetHeading: 0, phase: 0, moving: false, parts: null };
-function buildCat(colorHex) {
-  if (cat.parts) { scene.remove(cat.group); cat.group.clear(); }
+
+function buildCat(styleIdx) {
+  const S = CAT_STYLES[styleIdx] || CAT_STYLES[0];
   const g = cat.group;
-  const fur = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.85 });
-  const dark = new THREE.MeshBasicMaterial({ color: 0x39ff8e }); // 夜光绿眼睛
-  // 身体
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.38, 6, 14), fur);
-  body.rotation.x = Math.PI / 2; body.position.y = 0.36; g.add(body);
-  // 头
-  const headG = new THREE.Group(); headG.position.set(0, 0.56, 0.4); g.add(headG);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 18, 18), fur); headG.add(head);
+  g.clear();
+  const furM   = new THREE.MeshStandardMaterial({ color: S.fur, roughness: 0.9 });
+  const darkM  = new THREE.MeshStandardMaterial({ color: S.dark, roughness: 0.9 });
+  const bellyM = new THREE.MeshStandardMaterial({ color: S.belly, roughness: 0.95 });
+  const pinkM  = new THREE.MeshStandardMaterial({ color: 0xff9fb0, roughness: 0.8 });
+  const whiteM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pupilM = new THREE.MeshBasicMaterial({ color: 0x1d5c38 });
+  const glowM  = new THREE.MeshBasicMaterial({ color: 0x9dffc9 });
+
+  // 身体（圆滚滚）
+  const bodyG = new THREE.Group(); bodyG.position.set(0, 0.32, 0); g.add(bodyG);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.30, 24, 24), furM);
+  body.scale.set(1, 0.92, 1.15); bodyG.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.20, 18, 18), bellyM);
+  belly.position.set(0, -0.03, 0.235); belly.scale.set(0.9, 1.0, 0.62); bodyG.add(belly);
+  if (S.stripe) {
+    // 背纹：贴在背部曲面上
+    const stripeData = [
+      [0, 0.08, -0.342, -0.36], [0, 0.15, -0.302, -0.68], [0, 0.22, -0.220, -1.03],
+    ];
+    for (const [sx, sy, sz, rx] of stripeData) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.07, 0.025), darkM);
+      st.position.set(sx, sy, sz); st.rotation.x = rx;
+      bodyG.add(st);
+    }
+  }
+
+  // 大头
+  const headG = new THREE.Group(); headG.position.set(0, 0.70, 0.30); g.add(headG);
+  headG.add(new THREE.Mesh(new THREE.SphereGeometry(0.30, 28, 28), furM));
+  if (S.stripe) {
+    for (const sx of [-0.08, 0, 0.08]) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.02, 0.13), darkM);
+      st.position.set(sx, 0.275, 0.10); st.rotation.x = -0.35;
+      headG.add(st);
+    }
+  }
+  // 耳朵（外耳 + 粉色内耳）
+  const ears = [];
   for (const sx of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.14, 8), fur);
-    ear.position.set(sx * 0.11, 0.19, -0.02); ear.rotation.z = -sx * 0.25; headG.add(ear);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 10), dark);
-    eye.position.set(sx * 0.085, 0.03, 0.175); headG.add(eye);
+    const ear = new THREE.Group(); ear.position.set(sx * 0.175, 0.26, -0.03);
+    const outer = new THREE.Mesh(new THREE.ConeGeometry(0.105, 0.20, 10), furM);
+    outer.position.y = 0.08; ear.add(outer);
+    const inner = new THREE.Mesh(new THREE.ConeGeometry(0.058, 0.12, 10), pinkM);
+    inner.position.set(0, 0.06, 0.045); ear.add(inner);
+    ear.rotation.z = -sx * 0.28; ear.rotation.x = -0.12;
+    headG.add(ear); ears.push(ear);
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0xff8fa0 }));
-  nose.position.set(0, -0.03, 0.2); headG.add(nose);
-  // 尾巴
-  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.065, 0.55, 10), fur);
-  tail.position.set(0, 0.5, -0.42); tail.rotation.x = -0.85; g.add(tail);
-  const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), fur);
-  tailTip.position.set(0, 0.72, -0.63); g.add(tailTip);
-  // 腿
-  const legs = [];
-  const legGeo = new THREE.CylinderGeometry(0.055, 0.05, 0.3, 8);
-  for (const [sx, sz] of [[-0.14, 0.2], [0.14, 0.2], [-0.14, -0.2], [0.14, -0.2]]) {
-    const leg = new THREE.Mesh(legGeo, fur);
-    leg.position.set(sx, 0.16, sz);
-    g.add(leg); legs.push(leg);
+  // 大眼睛（眼白 + 瞳孔 + 高光）
+  const eyeWhites = [], pupils = [];
+  for (const sx of [-1, 1]) {
+    const w = new THREE.Mesh(new THREE.SphereGeometry(0.088, 18, 18), whiteM);
+    w.position.set(sx * 0.118, 0.035, 0.232); headG.add(w); eyeWhites.push(w);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.052, 16, 16), pupilM);
+    p.position.set(sx * 0.118, 0.035, 0.292); headG.add(p); pupils.push(p);
+    const h = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), glowM);
+    h.position.set(sx * 0.118 - 0.018, 0.058, 0.332); headG.add(h); pupils.push(h);
   }
-  // 脖子上的小光环（玩家标记）
+  // 粉鼻子 + ω 嘴
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.032, 12, 12), pinkM);
+  nose.position.set(0, -0.045, 0.288); nose.scale.set(1.25, 0.8, 0.7); headG.add(nose);
+  for (const sx of [-1, 1]) {
+    const mo = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.009, 8, 14, Math.PI), darkM);
+    mo.position.set(sx * 0.036, -0.058, 0.288);
+    mo.rotation.z = Math.PI;
+    headG.add(mo);
+  }
+  // 胡须
+  const whiskM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.65 });
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.26, 6), whiskM);
+      w.position.set(sx * 0.30, 0.0 - i * 0.035, 0.22 - i * 0.015);
+      w.rotation.z = Math.PI / 2 - sx * (0.12 + i * 0.10);
+      w.rotation.y = -sx * 0.25;
+      headG.add(w);
+    }
+  }
+  // 腮红
+  const blushM = new THREE.MeshBasicMaterial({ color: 0xff8fa0, transparent: true, opacity: 0.5 });
+  for (const sx of [-1, 1]) {
+    const b = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), blushM);
+    b.position.set(sx * 0.21, -0.058, 0.215);
+    b.rotation.y = sx * 0.55;
+    headG.add(b);
+  }
+  // 尾巴（上翘，条纹猫带环纹）
+  const tailG = new THREE.Group(); tailG.position.set(0, 0.36, -0.34); g.add(tailG);
+  const segs = [
+    [0, 0.00, 0.00, 0.075], [0, 0.10, -0.09, 0.070], [0, 0.21, -0.14, 0.065],
+    [0, 0.32, -0.15, 0.060], [0, 0.42, -0.12, 0.055],
+  ];
+  segs.forEach(([x, y, z, r], i) => {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 14),
+      (S.stripe && i % 2 === 1) ? darkM : furM);
+    s.position.set(x, y, z); tailG.add(s);
+  });
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 12), S.stripe ? darkM : furM);
+  tip.position.set(0, 0.50, -0.08); tailG.add(tip);
+  // 短腿 + 肉垫爪
+  const legGs = [];
+  const legGeo = new THREE.CylinderGeometry(0.070, 0.078, 0.20, 12);
+  const pawGeo = new THREE.SphereGeometry(0.075, 12, 12);
+  for (const [sx, sz] of [[-0.15, 0.17], [0.15, 0.17], [-0.15, -0.17], [0.15, -0.17]]) {
+    const lg = new THREE.Group(); lg.position.set(sx, 0.26, sz); g.add(lg);
+    const leg = new THREE.Mesh(legGeo, furM); leg.position.y = -0.10; lg.add(leg);
+    const paw = new THREE.Mesh(pawGeo, furM);
+    paw.position.set(0, -0.20, 0.025); paw.scale.set(1, 0.72, 1.25); lg.add(paw);
+    legGs.push(lg);
+  }
+  // 玩家标记光环
   const tagGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x39ff8e,
     transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
-  tagGlow.position.y = 0.15; tagGlow.scale.setScalar(0.8); g.add(tagGlow);
+  tagGlow.position.y = 0.03; tagGlow.scale.setScalar(1.1); g.add(tagGlow);
 
   g.position.set(0, 0, 1.6);
   scene.add(g);
-  cat.parts = { body, headG, tail, tailTip, legs };
-  return cat;
+  cat.parts = { bodyG, headG, ears, eyeWhites, pupils, tailG, legGs };
 }
 
 // ============ 输入 ============
@@ -551,22 +636,38 @@ function moveCat(dt) {
   while (dh < -Math.PI) dh += Math.PI * 2;
   cat.heading += dh * Math.min(1, 12 * dt);
   cat.group.rotation.y = cat.heading;
-  // 走路动画
+  // 走路动画（Q版弹跳 + 眨眼 + 摇尾）
   const P = cat.parts;
   if (P) {
+    const now = performance.now() * 0.001;
+    const blink = (now % 3.4) < 0.12 ? 0.12 : 1; // 眨眼
+    for (const e of P.eyeWhites) e.scale.y += (blink - e.scale.y) * 0.6;
+    for (const e of P.pupils) e.scale.y += (blink - e.scale.y) * 0.6;
     if (cat.moving) {
-      P.legs[0].rotation.x = Math.sin(cat.phase) * 0.6;
-      P.legs[3].rotation.x = Math.sin(cat.phase) * 0.6;
-      P.legs[1].rotation.x = Math.sin(cat.phase + Math.PI) * 0.6;
-      P.legs[2].rotation.x = Math.sin(cat.phase + Math.PI) * 0.6;
-      P.body.position.y = 0.36 + Math.abs(Math.sin(cat.phase)) * 0.035;
-      P.headG.position.y = 0.56 + Math.abs(Math.sin(cat.phase)) * 0.03;
+      const s = Math.sin(cat.phase);
+      P.legGs[0].rotation.x = s * 0.7;
+      P.legGs[3].rotation.x = s * 0.7;
+      P.legGs[1].rotation.x = -s * 0.7;
+      P.legGs[2].rotation.x = -s * 0.7;
+      const b = Math.abs(s);
+      P.bodyG.position.y = 0.32 + b * 0.045;
+      P.bodyG.scale.y = 1 - b * 0.07;
+      P.bodyG.rotation.z = s * 0.05;
+      P.headG.position.y = 0.70 + b * 0.03;
+      P.headG.rotation.z = s * 0.06;
+      P.tailG.rotation.y = Math.sin(now * 9) * 0.35;
     } else {
-      for (const l of P.legs) l.rotation.x *= 0.85;
-      P.body.position.y = 0.36 + Math.sin(performance.now() * 0.003) * 0.012; // 呼吸
+      for (const l of P.legGs) l.rotation.x *= 0.85;
+      P.bodyG.position.y = 0.32 + Math.sin(now * 2.4) * 0.010; // 呼吸
+      P.bodyG.scale.y = 1 + Math.sin(now * 2.4) * 0.018;
+      P.bodyG.rotation.z *= 0.9;
+      P.headG.position.y = 0.70 + Math.sin(now * 2.4) * 0.008;
+      P.headG.rotation.z *= 0.9;
+      P.tailG.rotation.y = Math.sin(now * 2.2) * 0.30;
     }
-    P.tail.rotation.z = Math.sin(performance.now() * 0.0022) * 0.3;
-    P.tailTip.position.x = Math.sin(performance.now() * 0.0022) * 0.12;
+    P.tailG.rotation.x = Math.sin(now * 1.7) * 0.08;
+    P.ears[0].rotation.x = -0.12 + Math.sin(now * 1.3) * 0.05;
+    P.ears[1].rotation.x = -0.12 + Math.sin(now * 1.3 + 1) * 0.05;
   }
 }
 
@@ -816,7 +917,7 @@ document.querySelectorAll('#catBtns .catchip').forEach(b => {
 });
 $('startBtn').addEventListener('click', () => {
   sfx.unlock(); sfx.open();
-  buildCat(CAT_COLORS[G.catColor]);
+  buildCat(G.catColor);
   $('startOverlay').classList.add('hidden');
   G.mode = 'playing';
   G.startT = Date.now();
