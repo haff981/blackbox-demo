@@ -77,6 +77,7 @@ const sfx = (() => {
     bad()   { tone(200, 0.22, 'sawtooth', 0.09, 0, 105); },
     open()  { tone(392, 0.12, 'triangle', 0.12); tone(587, 0.16, 'triangle', 0.12, 0.1); },
     discover() { [880, 1175, 1568].forEach((f, i) => tone(f, 0.22, 'sine', 0.11, i * 0.09)); },
+    vanish()   { tone(520, 0.25, 'sine', 0.08, 0, 200); },
     win()   { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.3, 'triangle', 0.13, i * 0.12)); },
   };
 })();
@@ -837,6 +838,8 @@ $('submitAnswerBtn').addEventListener('click', () => {
 
 function solveBox(box) {
   box.solved = true;
+  box.animGen = (box.animGen || 0) + 1;
+  const gen = box.animGen;
   G.solved++;
   $('solvedCount').textContent = G.solved;
   sfx.win();
@@ -846,10 +849,11 @@ function solveBox(box) {
   shockwave(box.group.position.x, box.group.position.z, 0xffd166, 7, 1.0);
   box.ringMat.color.set(0xffffff);
   tween(0.9, k => {
+    if (box.animGen !== gen) return;
     box.cubeG.scale.setScalar(Math.max(0.001, 1 - k));
     box.cubeMat.opacity = 1 - k;
     box.eMat.opacity = 0.95 * (1 - k);
-  }, () => { box.cubeG.visible = false; });
+  }, () => { if (box.animGen === gen) box.cubeG.visible = false; });
   box.star.material.opacity = 0.9;
   closeProbe();
   toast(`🎉 ${box.def.id} 号盒破解！${box.def.ruleDesc}`, 3400);
@@ -858,7 +862,10 @@ function solveBox(box) {
 
 // 盒子现身
 function revealBox(box) {
+  if (box.revealed || box.solved) return;
   box.revealed = true;
+  box.animGen = (box.animGen || 0) + 1;
+  const gen = box.animGen;
   box.group.visible = true;
   G.found++;
   $('foundCount').textContent = G.found;
@@ -866,6 +873,7 @@ function revealBox(box) {
   const p = box.group.position;
   box.cubeG.scale.setScalar(0.01);
   tween(0.6, k => { // back-out 缓动
+    if (box.animGen !== gen) return;
     const e = 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
     box.cubeG.scale.setScalar(Math.max(0.01, e));
   });
@@ -875,6 +883,26 @@ function revealBox(box) {
   shockwave(p.x, p.z, box.def.color, 5, 0.8);
   boxFlash(box, 0xffffff);
   toast(`✨ 发现了 ${box.def.id} 号盒！走近按 E 开盒`, 2600);
+}
+
+// 盒子隐身（猫走远）
+function hideBox(box) {
+  if (!box.revealed || box.solved) return;
+  box.revealed = false;
+  box.animGen = (box.animGen || 0) + 1;
+  const gen = box.animGen;
+  sfx.vanish();
+  const p = box.group.position;
+  burst(new THREE.Vector3(p.x, 1.2, p.z), box.def.color, 22, 1.2, 1.2, 0.6, 1.6);
+  tween(0.35, k => {
+    if (box.animGen !== gen) return;
+    box.cubeG.scale.setScalar(Math.max(0.01, 1 - k));
+  }, () => {
+    if (box.animGen !== gen) return;
+    box.group.visible = false;
+  });
+  if (G.activeBox === box) closeProbe();
+  toast(`💨 ${box.def.id} 号盒隐身了`, 1500);
 }
 
 // ============ 胜利 / 重开 / 主循环 ============
@@ -902,6 +930,7 @@ function showWin() {
 function resetGame() {
   for (const b of boxes) {
     b.solved = false; b.revealed = false; b.probes = 0; b.attempts = 0;
+    b.animGen = (b.animGen || 0) + 1; // 作废上一局的现身/隐身动画
     b.group.visible = false;
     b.cubeG.visible = true;
     b.cubeG.scale.setScalar(1);
@@ -977,19 +1006,21 @@ function animate() {
   }
   followCamera(dt);
   for (const b of boxes) {
-    if (!b.revealed) {
-      // 猫靠近才现身
-      const p = cat.group.position, bp = b.group.position;
-      if (G.mode === 'playing' && Math.hypot(p.x - bp.x, p.z - bp.z) < 3.2) revealBox(b);
+    if (b.solved) { // 已破解的星星标记常亮
+      b.star.material.opacity = 0.65 + Math.sin(t * 3) * 0.25;
       continue;
     }
-    if (!b.solved) {
-      b.cubeG.position.y = b.baseY + Math.sin(t * 1.4 + b.phase) * 0.1;
-      b.cubeG.rotation.y += dt * 0.55;
-      b.light.intensity = 10 + Math.sin(t * 2.4 + b.phase) * 3;
-    } else {
-      b.star.material.opacity = 0.65 + Math.sin(t * 3) * 0.25;
+    const p = cat.group.position, bp = b.group.position;
+    const d = Math.hypot(p.x - bp.x, p.z - bp.z);
+    if (!b.revealed) {
+      if (G.mode === 'playing' && d < 3.2) revealBox(b); // 靠近现身
+      continue;
     }
+    if (d > 4.5) hideBox(b); // 走远隐身（迟滞半径防抖）
+    if (!b.revealed) continue;
+    b.cubeG.position.y = b.baseY + Math.sin(t * 1.4 + b.phase) * 0.1;
+    b.cubeG.rotation.y += dt * 0.55;
+    b.light.intensity = 10 + Math.sin(t * 2.4 + b.phase) * 3;
   }
   renderer.render(scene, camera);
 }
