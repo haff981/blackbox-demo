@@ -30,7 +30,7 @@ const BOX_DEFS = [
 const ROOM = { x: 5.4, z: 3.9 }; // 猫的活动边界
 
 const $ = id => document.getElementById(id);
-const G = { mode: 'idle', probes: 0, solved: 0, attempts: 0, startT: 0, elapsed: 0,
+const G = { mode: 'idle', probes: 0, solved: 0, found: 0, attempts: 0, startT: 0, elapsed: 0,
             timerId: null, muted: false, catColor: 0, activeBox: null, promptBox: null };
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
@@ -76,6 +76,7 @@ const sfx = (() => {
     good()  { tone(523, 0.12, 'sine', 0.13); tone(784, 0.2, 'sine', 0.13, 0.09); },
     bad()   { tone(200, 0.22, 'sawtooth', 0.09, 0, 105); },
     open()  { tone(392, 0.12, 'triangle', 0.12); tone(587, 0.16, 'triangle', 0.12, 0.1); },
+    discover() { [880, 1175, 1568].forEach((f, i) => tone(f, 0.22, 'sine', 0.11, i * 0.09)); },
     win()   { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.3, 'triangle', 0.13, i * 0.12)); },
   };
 })();
@@ -329,7 +330,9 @@ function buildBox(def) {
   star.position.y = 2.6; star.scale.setScalar(1.1); g.add(star);
 
   const box = { def, group: g, cubeG, cubeMat, eMat, ringMat, light: bl, star,
-                solved: false, probes: 0, attempts: 0, baseY: 1.45, phase: Math.random() * 6 };
+                solved: false, revealed: false, probes: 0, attempts: 0,
+                baseY: 1.45, phase: Math.random() * 6 };
+  g.visible = false; // 藏起来，猫靠近才现身
   boxes.push(box);
   addCollider(bx, bz, 0.85);
   return box;
@@ -689,6 +692,7 @@ function updatePrompt() {
   const p = cat.group.position;
   let best = null, bestD = 2.4;
   for (const b of boxes) {
+    if (!b.revealed) continue; // 没现身的盒子不提示
     const d = Math.hypot(p.x - b.group.position.x, p.z - b.group.position.z);
     if (d < bestD) { bestD = d; best = b; }
   }
@@ -852,6 +856,27 @@ function solveBox(box) {
   if (G.solved >= 3) setTimeout(showWin, 1700);
 }
 
+// 盒子现身
+function revealBox(box) {
+  box.revealed = true;
+  box.group.visible = true;
+  G.found++;
+  $('foundCount').textContent = G.found;
+  sfx.discover();
+  const p = box.group.position;
+  box.cubeG.scale.setScalar(0.01);
+  tween(0.6, k => { // back-out 缓动
+    const e = 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+    box.cubeG.scale.setScalar(Math.max(0.01, e));
+  });
+  const wp = new THREE.Vector3(p.x, 1.45, p.z);
+  burst(wp, box.def.color, 60, 2.4, 2.0, 1.2, -0.5);
+  burst(wp, 0xffffff, 25, 1.6, 2.6, 0.9, -0.8);
+  shockwave(p.x, p.z, box.def.color, 5, 0.8);
+  boxFlash(box, 0xffffff);
+  toast(`✨ 发现了 ${box.def.id} 号盒！走近按 E 开盒`, 2600);
+}
+
 // ============ 胜利 / 重开 / 主循环 ============
 function startTimer() {
   clearInterval(G.timerId);
@@ -876,7 +901,8 @@ function showWin() {
 
 function resetGame() {
   for (const b of boxes) {
-    b.solved = false; b.probes = 0; b.attempts = 0;
+    b.solved = false; b.revealed = false; b.probes = 0; b.attempts = 0;
+    b.group.visible = false;
     b.cubeG.visible = true;
     b.cubeG.scale.setScalar(1);
     b.cubeMat.opacity = 1;
@@ -887,9 +913,10 @@ function resetGame() {
   }
   $('logList').innerHTML = '';
   closeProbe();
-  G.probes = 0; G.solved = 0; G.attempts = 0; G.elapsed = 0;
+  G.probes = 0; G.solved = 0; G.found = 0; G.attempts = 0; G.elapsed = 0;
   $('probeCount').textContent = '0';
   $('solvedCount').textContent = '0';
+  $('foundCount').textContent = '0';
   $('timer').textContent = '00:00';
   cat.group.position.set(0, 0, 1.6);
   cat.heading = 0; cat.targetHeading = 0; cat.group.rotation.y = 0;
@@ -950,6 +977,12 @@ function animate() {
   }
   followCamera(dt);
   for (const b of boxes) {
+    if (!b.revealed) {
+      // 猫靠近才现身
+      const p = cat.group.position, bp = b.group.position;
+      if (G.mode === 'playing' && Math.hypot(p.x - bp.x, p.z - bp.z) < 3.2) revealBox(b);
+      continue;
+    }
     if (!b.solved) {
       b.cubeG.position.y = b.baseY + Math.sin(t * 1.4 + b.phase) * 0.1;
       b.cubeG.rotation.y += dt * 0.55;
